@@ -1,17 +1,35 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>字幕本地化质检</title>
-<style>body{font:15px/1.5 system-ui,sans-serif;max-width:1080px;margin:32px auto;padding:0 18px}input,select,textarea,button{padding:7px;margin:3px}.card{border:1px solid #d9e1e8;border-radius:10px;padding:16px;margin:16px 0}pre,textarea{background:#f5f7f9;padding:12px;overflow:auto;width:100%;box-sizing:border-box}button{cursor:pointer}small{color:#667}</style></head>
-<body><h1>影视字幕本地化质检</h1><p>示例项目已含术语表。分配翻译、时间轴和复核人员后，录入带时间点的字幕与评论，再完成提交、复核、锁定和交付。</p>
-<div class="card"><h2>身份与版本</h2><input id="user" value="alice"><select id="role"><option>owner</option><option>reviewer</option><option>translator</option><option>admin</option></select><label>版本 ID <input id="version" type="number" value="1"></label><button onclick="refresh()">刷新</button><pre id="data">等待刷新…</pre></div>
-<div class="card"><h2>录入字幕</h2><textarea id="cue" rows="5">{"cue_index":1,"start_ms":1000,"end_ms":3000,"text":"海豹出现在冰面上","expected_revision":0}</textarea><button onclick="saveCue()">保存字幕</button><pre id="cueResult"></pre></div>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>字幕本地化质检与多渠道交付</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:1080px;margin:32px auto;padding:0 18px}input,select,textarea,button{padding:7px;margin:3px}.card{border:1px solid #d9e1e8;border-radius:10px;padding:16px;margin:16px 0}pre,textarea{background:#f5f7f9;padding:12px;overflow:auto;width:100%;box-sizing:border-box}button{cursor:pointer}.ok{color:#147a2c}.bad{color:#b3261e}.warn{color:#9a6700}small{color:#667}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d9e1e8;padding:5px 8px;text-align:left;font-size:13px}</style></head>
+<body><h1>影视字幕本地化质检与多渠道交付</h1><p>锁定版本后按影院（DCP XML，不含 SDH）、流媒体（WebVTT）、电视台（EBU-STL）分别生成字幕包与清单；逐渠道重试、按回执校验值对账，三方齐全才能确认交付。</p>
+<div class="card"><h2>身份与版本</h2><input id="user" value="alice"><select id="role"><option>owner</option><option>reviewer</option><option>translator</option><option>admin</option></select><label>版本 ID <input id="version" type="number" value="1"></label><button onclick="refresh()">刷新</button>
+<table id="channels"><thead><tr><th>渠道</th><th>状态</th><th>对账</th><th>包校验值</th><th>文件数</th><th>错误</th></tr></thead><tbody></tbody></table><pre id="data">等待刷新…</pre></div>
+<div class="card"><h2>录入字幕</h2><textarea id="cue" rows="5">{"cue_index":1,"start_ms":1000,"end_ms":3000,"text":"海豹出现在冰面上","expected_revision":0,"sdh":false}</textarea><button onclick="saveCue()">保存字幕</button><pre id="cueResult"></pre></div>
 <div class="card"><h2>时间点评论</h2><input id="time" type="number" value="1200"><input id="comment" value="请复核这里的术语"><button onclick="addComment()">添加评论</button><pre id="commentResult"></pre></div>
-<div class="card"><h2>状态流转</h2><button onclick="action('submit')">提交复核</button><button onclick="review('approve')">复核通过</button><button onclick="review('reject')">退回修改</button><button onclick="action('lock')">锁定</button><button onclick="action('deliver')">交付</button><pre id="stateResult"></pre></div>
+<div class="card"><h2>状态流转</h2><button onclick="action('submit')">提交复核</button><button onclick="review('approve')">复核通过</button><button onclick="review('reject')">退回修改</button><button onclick="action('lock')">锁定并生成渠道包</button><button onclick="action('unlock')">解锁修改</button><button onclick="retryPackages()">重试/补生成渠道包</button><pre id="stateResult"></pre></div>
+<div class="card"><h2>渠道回执对账</h2><select id="ch"><option value="cinema">影院 cinema</option><option value="streaming">流媒体 streaming</option><option value="tv">电视台 tv</option></select><input id="receiptId" value="RCP-0001"><small>留空文件清单则按该渠道当前清单自动生成一份“相符”回执用于演示</small><br><textarea id="receiptFiles" rows="3" placeholder='[{"path":"subtitle.vtt","sha256":"..."}]'></textarea><br><button onclick="sendReceipt()">登记回执并对账</button><pre id="receiptResult"></pre></div>
+<div class="card"><button onclick="action('deliver')">三方对账齐全后确认交付</button></div>
 <script>
 const auth=()=>({'Content-Type':'application/json','X-User':user.value,'X-Role':role.value});
 async function call(url,opts={}){const r=await fetch(url,opts);const j=await r.json();if(!r.ok)throw Error(j.error||r.status);return j}
-async function saveCue(){try{cueResult.textContent=JSON.stringify(await call('/api/versions/'+version.value+'/cues',{method:'POST',headers:auth(),body:cue.value}),null,2)}catch(e){cueResult.textContent=e.message}}
+async function saveCue(){try{cueResult.textContent=JSON.stringify(await call('/api/versions/'+version.value+'/cues',{method:'POST',headers:auth(),body:cue.value}),null,2);refresh()}catch(e){cueResult.textContent=e.message}}
 async function addComment(){try{commentResult.textContent=JSON.stringify(await call('/api/versions/'+version.value+'/comments',{method:'POST',headers:auth(),body:JSON.stringify({time_ms:+time.value,body:comment.value})}),null,2)}catch(e){commentResult.textContent=e.message}}
 async function action(name){try{stateResult.textContent=JSON.stringify(await call('/api/versions/'+version.value+'/'+name,{method:'POST',headers:auth(),body:'{}'}),null,2);refresh()}catch(e){stateResult.textContent=e.message}}
+async function retryPackages(){try{stateResult.textContent=JSON.stringify(await call('/api/versions/'+version.value+'/packages',{method:'POST',headers:auth(),body:'{}'}),null,2);refresh()}catch(e){stateResult.textContent=e.message}}
 async function review(decision){try{stateResult.textContent=JSON.stringify(await call('/api/versions/'+version.value+'/review',{method:'POST',headers:auth(),body:JSON.stringify({decision,comment:''})}),null,2);refresh()}catch(e){stateResult.textContent=e.message}}
-async function refresh(){try{const [p,v,c,cm,d]=await Promise.all(['/api/projects','/api/versions','/api/versions/'+version.value+'/cues','/api/versions/'+version.value+'/comments','/api/deliveries'].map(call));data.textContent=JSON.stringify({p,v,c,cm,d},null,2)}catch(e){data.textContent=e.message}}
+async function sendReceipt(){
+  let files;
+  if(receiptFiles.value.trim()){try{files=JSON.parse(receiptFiles.value)}catch(e){receiptResult.textContent='文件清单不是合法 JSON';return}}
+  else{const st=await call('/api/versions/'+version.value+'/packages');const c=st.channels.find(x=>x.channel===ch.value);if(!c||c.status!=='packaged'){receiptResult.textContent='该渠道包尚未就绪';return}files=c.files.map(f=>({path:f.path,sha256:f.sha256}))}
+  try{const body={channel:ch.value,receipt_id:receiptId.value,files};receiptResult.textContent=JSON.stringify(await call('/api/versions/'+version.value+'/receipts',{method:'POST',headers:auth(),body:JSON.stringify(body)}),null,2);refresh()}catch(e){receiptResult.textContent=e.message}
+}
+function renderChannels(st){
+  const cls={packaged:'ok',matched:'ok',failed:'bad',mismatched:'bad',stale:'warn',pending:'warn',missing:'warn'};
+  channels.querySelector('tbody').innerHTML=st.channels.map(c=>{
+    const r=c.latest_receipt;const rec=r?`${r.status}${r.active?'':'（已作废）'}${r.id?' #'+r.receipt_id:''}`:'—';
+    return `<tr><td>${c.channel_label} ${c.channel}</td><td class="${cls[c.status]||''}">${c.status}${c.legacy?' (legacy)':''}</td><td class="${cls[r&&r.active?r.status:'']||''}">${rec}</td><td>${c.package_hash?c.package_hash.slice(0,16)+'…':'—'}</td><td>${c.files?c.files.length:0}</td><td>${c.error||''}</td></tr>`;
+  }).join('');
+}
+async function refresh(){try{const [p,v,c,cm,d,st]=await Promise.all(['/api/projects','/api/versions','/api/versions/'+version.value+'/cues','/api/versions/'+version.value+'/comments','/api/deliveries','/api/versions/'+version.value+'/packages'].map(u=>call(u).catch(e=>({error:String(e)}))));renderChannels(st);data.textContent=JSON.stringify({p,v,c,cm,d,st},null,2)}catch(e){data.textContent=e.message}}
+refresh();
 </script></body></html>
