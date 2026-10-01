@@ -1,0 +1,11 @@
+{
+  "projectId": "pair-wise-gsb-38",
+  "projectName": "pair-wise-gsb-38",
+  "category": "困难 Python 项目",
+  "businessDomain": "影视字幕",
+  "projectForm": "完整项目",
+  "codeScope": "backend, frontend",
+  "languages": ["Python", "HTML", "CSS", "JavaScript"],
+  "summary": "影视字幕本地化质检、术语校验、时间轴审核和确定性交付服务。",
+  "containerized": false
+}
