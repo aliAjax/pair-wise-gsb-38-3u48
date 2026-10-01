@@ -1,17 +1,37 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>字幕本地化质检</title>
-<style>body{font:15px/1.5 system-ui,sans-serif;max-width:1080px;margin:32px auto;padding:0 18px}input,select,textarea,button{padding:7px;margin:3px}.card{border:1px solid #d9e1e8;border-radius:10px;padding:16px;margin:16px 0}pre,textarea{background:#f5f7f9;padding:12px;overflow:auto;width:100%;box-sizing:border-box}button{cursor:pointer}small{color:#667}</style></head>
-<body><h1>影视字幕本地化质检</h1><p>示例项目已含术语表。分配翻译、时间轴和复核人员后，录入带时间点的字幕与评论，再完成提交、复核、锁定和交付。</p>
+<style>body{font:15px/1.5 system-ui,sans-serif;max-width:1080px;margin:32px auto;padding:0 18px}input,select,textarea,button{padding:7px;margin:3px}.card{border:1px solid #d9e1e8;border-radius:10px;padding:16px;margin:16px 0}pre,textarea{background:#f5f7f9;padding:12px;overflow:auto;width:100%;box-sizing:border-box}button{cursor:pointer}.ch{display:inline-block;border:1px solid #cdd7e0;border-radius:8px;padding:8px 12px;margin:6px 8px 6px 0;min-width:220px}.st{font-weight:600}.st-confirmed{color:#1a7f37}.st-packed{color:#0a66c2}.st-pending,.st-invalidated{color:#b26a00}.st-failed{color:#c22}</style></head>
+<body><h1>影视字幕本地化质检与渠道交付</h1><p>锁定版本时按影院、流媒体、电视台规则分别打包；打包中断后可续打，渠道回执按文件校验值对账，三渠道全部对得上才算交付完成。</p>
 <div class="card"><h2>身份与版本</h2><input id="user" value="alice"><select id="role"><option>owner</option><option>reviewer</option><option>translator</option><option>admin</option></select><label>版本 ID <input id="version" type="number" value="1"></label><button onclick="refresh()">刷新</button><pre id="data">等待刷新…</pre></div>
 <div class="card"><h2>录入字幕</h2><textarea id="cue" rows="5">{"cue_index":1,"start_ms":1000,"end_ms":3000,"text":"海豹出现在冰面上","expected_revision":0}</textarea><button onclick="saveCue()">保存字幕</button><pre id="cueResult"></pre></div>
 <div class="card"><h2>时间点评论</h2><input id="time" type="number" value="1200"><input id="comment" value="请复核这里的术语"><button onclick="addComment()">添加评论</button><pre id="commentResult"></pre></div>
-<div class="card"><h2>状态流转</h2><button onclick="action('submit')">提交复核</button><button onclick="review('approve')">复核通过</button><button onclick="review('reject')">退回修改</button><button onclick="action('lock')">锁定</button><button onclick="action('deliver')">交付</button><pre id="stateResult"></pre></div>
+<div class="card"><h2>状态流转与渠道打包</h2><button onclick="action('submit')">提交复核</button><button onclick="review('approve')">复核通过</button><button onclick="review('reject')">退回修改</button><button onclick="action('lock')">锁定并按渠道打包</button><button onclick="action('unlock')">解锁返修</button><button onclick="action('deliver')">续打未完成渠道</button><pre id="stateResult"></pre></div>
+<div class="card"><h2>渠道回执</h2><label>渠道 <select id="ch"><option value="cinema">影院 cinema</option><option value="streaming">流媒体 streaming</option><option value="tv">电视台 tv</option></select></label><label>回执号 <input id="receiptNo" value="R-1"></label><br><textarea id="receipt" rows="4">[]</textarea><br><button onclick="sendReceipt()">发送回执对账</button><button onclick="fillCorrectReceipt()">填入正确校验值</button><button onclick="fillBadReceipt()">模拟缺件/错值</button><pre id="receiptResult"></pre></div>
+<div class="card"><h2>渠道状态</h2><div id="deliveryBox">等待刷新…</div></div>
 <script>
 const auth=()=>({'Content-Type':'application/json','X-User':user.value,'X-Role':role.value});
 async function call(url,opts={}){const r=await fetch(url,opts);const j=await r.json();if(!r.ok)throw Error(j.error||r.status);return j}
+function statusLabel(s){return{pending:'待打包',packed:'已打包待回执',confirmed:'回执已确认',failed:'打包失败',invalidated:'内容已变更待重打'}[s]||s}
+function renderDelivery(d){if(!d){receiptResult.textContent='该版本还没有交付任务';return}
+ let html='<div><b>交付 #'+d.id+'</b> 版本状态：'+d.version_status+(d.completed_at?('，完成于 '+d.completed_at):'')+'</div>';
+ for(const c of d.channels){html+='<span class="ch">'+c.label+' ('+c.channel+')<br><span class="st st-'+c.status+'">'+statusLabel(c.status)+'</span><br><small>尝试 '+c.attempts+(c.last_error?(' · 错误: '+c.last_error):'')+'</small><br>';
+   for(const f of (c.manifest_data&&c.manifest_data.files?c.manifest_data.files:[])){html+='<small>'+f.path+' · '+f.sha256.slice(0,12)+'…</small><br>'}
+   html+='</span>'}
+ return html}
 async function saveCue(){try{cueResult.textContent=JSON.stringify(await call('/api/versions/'+version.value+'/cues',{method:'POST',headers:auth(),body:cue.value}),null,2)}catch(e){cueResult.textContent=e.message}}
 async function addComment(){try{commentResult.textContent=JSON.stringify(await call('/api/versions/'+version.value+'/comments',{method:'POST',headers:auth(),body:JSON.stringify({time_ms:+time.value,body:comment.value})}),null,2)}catch(e){commentResult.textContent=e.message}}
-async function action(name){try{stateResult.textContent=JSON.stringify(await call('/api/versions/'+version.value+'/'+name,{method:'POST',headers:auth(),body:'{}'}),null,2);refresh()}catch(e){stateResult.textContent=e.message}}
+async function action(name){try{stateResult.textContent=JSON.stringify(await call('/api/versions/'+version.value+'/'+name,{method:'POST',headers:auth(),body:'{}'}),null,2);refresh()}catch(e){stateResult.textContent=e.message;refresh()}}
 async function review(decision){try{stateResult.textContent=JSON.stringify(await call('/api/versions/'+version.value+'/review',{method:'POST',headers:auth(),body:JSON.stringify({decision,comment:''})}),null,2);refresh()}catch(e){stateResult.textContent=e.message}}
-async function refresh(){try{const [p,v,c,cm,d]=await Promise.all(['/api/projects','/api/versions','/api/versions/'+version.value+'/cues','/api/versions/'+version.value+'/comments','/api/deliveries'].map(call));data.textContent=JSON.stringify({p,v,c,cm,d},null,2)}catch(e){data.textContent=e.message}}
+async function sendReceipt(){try{let d=await call('/api/versions/'+version.value+'/delivery');
+ const r=await call('/api/deliveries/'+d.id+'/channels/'+ch.value+'/receipt',{method:'POST',headers:auth(),body:JSON.stringify({receipt_no:receiptNo.value,files:JSON.parse(receipt.value)})});
+ receiptResult.textContent=JSON.stringify(r,null,2);refresh()}catch(e){receiptResult.textContent=e.message}}
+async function fillCorrectReceipt(){try{let d=await call('/api/versions/'+version.value+'/delivery');let c=d.channels.find(x=>x.channel===ch.value);
+ receipt.value=JSON.stringify((c.manifest_data.files||[]).map(f=>({path:f.path,sha256:f.sha256})),null,2)}catch(e){receipt.value=e.message}}
+async function fillBadReceipt(){try{let d=await call('/api/versions/'+version.value+'/delivery');let c=d.channels.find(x=>x.channel===ch.value);
+ receipt.value=JSON.stringify([{path:(c.manifest_data.files[0]||{}).path,sha256:'a'.repeat(64)}],null,2)}catch(e){receipt.value=e.message}}
+async function refresh(){try{const [p,v,c,cm,d]=await Promise.all(['/api/projects','/api/versions','/api/versions/'+version.value+'/cues','/api/versions/'+version.value+'/comments','/api/deliveries'].map(call));
+ let deliveryHtml='无交付任务';try{deliveryHtml=renderDelivery(await call('/api/versions/'+version.value+'/delivery'))}catch(e){}
+ data.textContent=JSON.stringify({p,v,c,cm,d},null,2);
+ deliveryBox.innerHTML=deliveryHtml}catch(e){data.textContent=e.message}}
+refresh();
 </script></body></html>
